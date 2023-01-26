@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -A NRLDC32653525
+#PBS -q standard
+#PBS -l select=8:ncpus=48:mpiprocs=48:bigmem=1
+#PBS -l walltime=24:00:00
+#PBS -q standard
+JOBID=${PBS_JOBID%.*}
+
+#######################################################################################
+REF=references/Exode1/Exode1_AssemblyScaffolds.fasta
+DIR=JGI_resequencing_2022/JGI_resequencing_FASTQ_Yale
+
+echo "Isolate: $isolate";
+#######################################################################################
+
+###${isolate}_R1.fastq.gz
+
+reformat.sh out=$DIR/${isolate}.fastq.gz \
+in1=$DIR/${isolate}_R1.fastq.gz in2=$DIR/${isolate}_R2.fastq.gz ow=t
+
+/bbmerge.sh overwrite=true \
+in1=$DIR/${isolate}.fastq.gz outa=$DIR/${isolate}.adaptersDetected.fa reads=1m
+
+clumpify.sh pigz=t unpigz=t zl=4 reorder \
+in1=$DIR/${isolate}.fastq.gz out1=$DIR/${isolate}.tmp.anqdt.fastq.gz dedupe passes=1
+###Use BBTools version 38.90
+bbduk.sh ktrim=r \
+ordered minlen=49 minlenfraction=0.33 mink=11 tbo tpe rcomp=f overwrite=true k=23 hdist=1 hdist2=1 ftm=5 \
+pratio=G,C plen=20 phist=phist.txt qhist=qhist.txt bhist=bhist.txt gchist=gchist.txt pigz=t unpigz=t zl=9 ow=true \
+in1=$DIR/${isolate}.tmp.anqdt.fastq.gz out1=$DIR/${isolate}.anqdt.fastq.gz rqc=hashmap outduk=ktrim_kmerStats1.txt \
+stats=ktrim_scaffoldStats1.txt loglog loglogout adapters=$DIR/${isolate}.adaptersDetected.fa
+
+rm $DIR/${isolate}.tmp.anqdt.fastq.gz
+
+bwa mem -M -p \
+-R "@RG\tID:${isolate}\tSM:${isolate}\tPL:Illumina\tLB:lib" \
+$REF $DIR/${isolate}.anqdt.fastq.gz > $DIR/${isolate}.aln.sam
+
+samtools view -t 2 -bt $REF.fai $DIR/${isolate}.aln.sam > $DIR/${isolate}.aln.bam
+samtools sort -o $DIR/${isolate}.bam -T $DIR/${isolate}.tmp.bam $DIR/${isolate}.aln.bam
+
+picard.jar FixMateInformation \
+I=$DIR/${isolate}.bam O=$DIR/${isolate}.fd.bam MAX_RECORDS_IN_RAM=500000 VALIDATION_STRINGENCY=SILENT SO=coordinate
+
+java -jar picard.jar MarkDuplicates I=$DIR/${isolate}.fd.bam \
+O=$DIR/${isolate}.bam MAX_RECORDS_IN_RAM=41000000 M=$DIR/${isolate}.bam.dupeMetrics \
+VALIDATION_STRINGENCY=SILENT MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=950
+
+samtools index $DIR/${isolate}.bam
