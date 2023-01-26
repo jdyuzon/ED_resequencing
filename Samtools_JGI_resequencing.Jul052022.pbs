@@ -1,0 +1,121 @@
+#!/bin/bash
+#PBS -A NRLDC32653525
+#PBS -q standard
+#PBS -l select=1:ncpus=44:mpiprocs=44
+#PBS -l walltime=100:00:00
+JOBID=${PBS_JOBID%.*}
+
+REF=references/Exode1/Exode1_AssemblyScaffolds.fasta
+DIR=jgi_resequencing/jgi_resequencing_SNPs
+
+bam_list=bam_list.jgi_resequencing.Jul052022.txt
+bam_list_dir=bam_list.jgi_resequencing.Jul052022.txt
+sample_names=sample_names.jgi_resequencing.Jul052022.txt
+
+cp $bam_list  $DIR
+cp $sample_names  $DIR
+
+cd $DIR
+
+#######################################################################################
+########### BCFTOOLS MPILEUP AND SNP CALLING ##########################################
+#######################################################################################
+
+bcftools mpileup -E -C 50 -m 2 -F 0.005682 -d 5000 \
+-a FORMAT/DP,FORMAT/AD,FORMAT/ADF,FORMAT/ADR,FORMAT/SP \
+-O u -f $REF -b $bam_list_dir \
+|bcftools call -p 0.994318 -mv -f GQ --ploidy 1 -Ov -o multisample-calls.flt.vcf
+
+
+#######################################################################################
+########### BCFTOOLS NORM: realign INDELS #############################################
+#######################################################################################
+
+bcftools norm -f $REF \
+-O z -o temp.multisample-calls.ref-bed.1.bed.flt.vcf.gz multisample-calls.flt.vcf
+
+####Replace JGI codes with Isolate Names
+bcftools reheader -s $sample_names temp.multisample-calls.ref-bed.1.bed.flt.vcf.gz -o ED.multisample.named.vcf.gz
+
+#######################################################################################
+############# BCFTOOLS: Filter Variants ###############################################
+#######################################################################################
+
+#### Filter by Mapping Quality
+bcftools view -e 'MQ<30'  ED.multisample.named.vcf.gz > ED.multisample.MQ.vcf.gz
+
+#### Filter by Genotype Quality and Depth
+bcftools filter -S . -e 'GQ<30'  ED.multisample.MQ.vcf.gz| bcftools filter -S . -e 'FORMAT/DP<30' > ED.multisample.GQ.vcf.gz
+
+#### Filter by Allele Depth
+bcftools filter -S . -e ' GT="0" & FORMAT/AD[:0]<5'  ED.multisample.GQ.vcf.gz \
+|bcftools filter -S . -e  ' GT="0"  & FORMAT/AD[:0]/(FORMAT/AD[:0]+FORMAT/AD[:1]+FORMAT/AD[:2]) <0.7' > ED.multisample.AD0.vcf.gz
+bcftools filter -S . -e ' GT="1"  & FORMAT/AD[:1]<5'  ED.multisample.AD0.vcf.gz \
+|bcftools filter -S . -e  ' GT="1"  & FORMAT/AD[:1]/(FORMAT/AD[:0]+FORMAT/AD[:1]+FORMAT/AD[:2]) <0.7' > ED.multisample.AD1.vcf.gz
+bcftools filter -S . -e ' GT="2"  & FORMAT/AD[:2]<5'  ED.multisample.AD1.vcf.gz \
+|bcftools filter -S . -e  ' GT="2"  & FORMAT/AD[:2]/(FORMAT/AD[:0]+FORMAT/AD[:1]+FORMAT/AD[:2]) <0.7' > ED.multisample.AD2.vcf.gz
+
+#### Filter by Forward/Reverse Allele Depth
+bcftools filter -S . -e ' GT="0" & (FORMAT/ADF[:0])/(FORMAT/ADR[:0])<0.1 ' ED.multisample.AD2.vcf.gz \
+|bcftools filter -S . -e ' GT="0" & (FORMAT/ADR[:0])/(FORMAT/ADF[:0])<0.1'  >ED.multisample.adfadr0.vcf.gz
+
+bcftools filter -S . -e ' GT="1" & (FORMAT/ADF[:1])/(FORMAT/ADR[:1])<0.1 ' ED.multisample.adfadr0.vcf.gz \
+|bcftools filter -S . -e ' GT="1" & (FORMAT/ADR[:1])/(FORMAT/ADF[:1])<0.1' > ED.multisample.adfadr1.vcf.gz
+
+bcftools filter -S . -e ' GT="2" & (FORMAT/ADF[:2])/(FORMAT/ADR[:2])<0.1 ' ED.multisample.adfadr1.vcf.gz \
+|bcftools filter -S . -e ' GT="2" & (FORMAT/ADR[:2])/(FORMAT/ADF[:2])<0.1' > ED.multisample.adfadr2.vcf.gz
+
+#### Filter loci where descendants don't have ancestors mutation
+bcftools filter -e 'GT[83]="1" &&(GT[17]="0"|GT[18]="0"|GT[19]="0"|GT[20]="0"|GT[21]="0"|GT[22]="0"|GT[23]="0"|GT[24]="0"|GT[25]="0")' \
+ED.multisample.adfadr2.vcf.gz \
+|bcftools filter -e 'GT[85]="1" &&(GT[26]="0"|GT[27]="0"|GT[28]="0"|GT[29]="0"|GT[30]="0"|GT[31]="0"|GT[32]="0"|GT[33]="0"|GT[34]="0")' \
+|bcftools filter -e 'GT[87]="1" &&(GT[35]="0"|GT[36]="0"|GT[37]="0"|GT[38]="0"|GT[39]="0"|GT[40]="0"|GT[41]="0"|GT[42]="0"|GT[43]="0")' \
+|bcftools filter -e 'GT[88]="1" &&(GT[44]="0"|GT[45]="0"|GT[46]="0"|GT[47]="0"|GT[48]="0"|GT[49]="0"|GT[50]="0"|GT[51]="0"|GT[52]="0")' \
+|bcftools filter -e 'GT[90]="1" &&(GT[53]="0"|GT[54]="0"|GT[55]="0"|GT[56]="0"|GT[57]="0"|GT[58]="0"|GT[59]="0"|GT[60]="0"|GT[61]="0")' \
+|bcftools filter -e 'GT[91]="1" &&(GT[62]="0"|GT[63]="0"|GT[64]="0"|GT[65]="0"|GT[66]="0"|GT[67]="0"|GT[68]="0"|GT[69]="0")' \
+|bcftools filter -e 'GT[92]="1" &&(GT[70]="0"|GT[71]="0"|GT[72]="0"|GT[73]="0"|GT[74]="0"|GT[75]="0"|GT[76]="0"|GT[77]="0"|GT[78]="0")' \
+> ED.multisample.WT_vs_PKS.variant0.vcf
+
+#### Samples for WT vs PKS analysis (filter loci where WTC/PKSC have alternative genotype, remove samples and loci with 75% and 10% missing data,respectively)
+grep 'WT\|PKS' $sample_names >WT_vs_PKS.txt
+###grep 'WT\|PKS' $sample_names|grep 'WTC-\|PKSC-\|WT15-\|PKS15-' >WT_vs_PKS.orig.txt
+
+/p/app/unsupported/metaomic/JDY/miniconda3/pkgs/plink-1.90b6.21-hec16e2b_2/bin/plink \
+--missing --vcf ED.multisample.WT_vs_PKS.variant0.vcf --recode --allow-extra-chr
+sample_miss=`sort -r -k6 plink.imiss |awk '($6 >=0.75){print $1}'|grep 'WT\|PKS'|sed 's/\n/,/g'`
+
+bcftools view -S WT_vs_PKS.txt  ED.multisample.WT_vs_PKS.variant0.vcf> ED.multisample.WT_vs_PKS.vcf.gz
+bcftools filter -S . -e 'GT[0:16,79,81]="1" | GT[0:16,79,81]="2"' ED.multisample.WT_vs_PKS.vcf.gz \
+|bcftools view -Oz -i ' (GT="0" && GT="1")|(GT="0" && GT="2")|(GT="1" && GT="2") ' \
+|bcftools view -s ^$sample_miss \
+|bcftools view -i 'F_MISSING<0.1' > ED.multisample.WT_vs_PKS.variant.vcf
+
+
+##separate original Isolates from Jillian and Zach
+bcftools view -S WT_vs_PKS.orig.txt  ED.multisample.WT_vs_PKS.variant.vcf> ED.multisample.WT_vs_PKS.orig.vcf.gz
+bcftools view -Oz -i ' (GT="0" && GT="1")|(GT="0" && GT="2")|(GT="1" && GT="2") ' ED.multisample.WT_vs_PKS.orig.vcf.gz \
+> ED.multisample.WT_vs_PKS.variant.orig.vcf
+
+###Genotypes in matrix
+bcftools query -H -f '%CHROM %POS[\t%GT]\n' ED.multisample.WT_vs_PKS.variant.vcf \
+|sed 's/:GT//g' |sed 's/\[.\]//g'|sed 's/\[..\]//g' > ED.multisample.WT_vs_PKS.variant.GT.txt
+
+###SNPeff (locations of SNPs: intron, exon, etc)
+bgzip -c ED.multisample.WT_vs_PKS.variant.vcf >ED.multisample.WT_vs_PKS.variant.vcf.gz
+tabix -p vcf ED.multisample.WT_vs_PKS.variant.vcf.gz
+
+/p/app/unsupported/metaomic/JDY/miniconda3/bin/snpEff -classic  -s ED.multisample.WT_vs_PKS.variant.vcf.summary.html E_dermatitidis_UT8656 \
+ED.multisample.WT_vs_PKS.variant.vcf.gz > ED.multisample.WT_vs_PKS.variant.snpeff.vcf
+
+bcftools query -H -f '%EFF %CHROM %POS [\t%GT]\n' ED.multisample.WT_vs_PKS.variant.snpeff.vcf \
+|sed 's/:GT//g' |sed 's/\[.\]//g' |sed 's/\[..\]//g' |awk -F'\t' -vOFS='\t' '{ gsub(",", $0"\n", $1) ; print }' \
+|sed 's/,.*scaffold/\tscaffold/g' |sed 's/).*)/)/g'|awk '{print $1 "\t" $1 "\t" $0}' \
+|awk 'BEGIN{FS=OFS="\t"} {gsub(".*mRNA","gene",$1)}1' |awk 'BEGIN{FS=OFS="\t"} {gsub(/\|.*)/,"",$1)}1' \
+|awk 'BEGIN{FS=OFS="\t"} {gsub(/\(.*/,"",$2)}1'>ED.multisample.WT_vs_PKS.variant.snpeff.txt
+
+
+#######################################################################################
+#### False Positive: within WTC and PKSC mutations, between WTC and PKSC ##############
+#######################################################################################
+bcftools view -Ov -s WTC-1,WTC-1-4,PKSC-1-1,PKSC-1-4 \
+ED.multisample.WT_vs_PKS.variant.vcf.gz -o ED.multisample.WTC_vs_PKSC.vcf
