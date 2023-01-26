@@ -1,2 +1,17 @@
-# ED_resequencing
-ED_resequencing
+# Genome Integrity of Exophiala dermatitidis adapted to ionizing radiation 
+
+Filtering and mapping FASTQ reads
+```
+```
+
+SNP Calling
+```
+```
+
+SV calling
+
+```
+```
+
+Identification of Parallel Mutations
+
