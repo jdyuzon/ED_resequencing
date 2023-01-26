@@ -20,8 +20,10 @@ Samtools_JGI_resequencing.Jul052022.pbs
 ```
 
 ## Structural Variant calling
-sv-callers was used to identify Structural Variants.
+sv-callers was used to identify Structural Variants. The following files were used to configure the workflow:
 ```
+WT_PKS.paired.samples.Jul042022.csv
+analysis.yaml
 ```
 
 ## Identification of Parallel Mutations
