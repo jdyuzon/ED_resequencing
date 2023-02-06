@@ -26,6 +26,8 @@ WT_PKS.paired.samples.Jul042022.csv
 analysis.yaml
 ```
 
-## Identification of Parallel Mutations
+## Identification of Parallel Mutation
+Mutations that arose multiple times independently in evolved lineages were identified. We focused on mutations that persisted in evolved isolates and were associated with differential gene expression.
 ```
+JGI_resequencing.R
 ```
